@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
 import { Avatar, EmptyState, SOURCE_LABEL, SourceBadge } from "../components/ui";
-import { TEAM } from "../data/mock";
+import { teamList } from "../lib/people";
 import { TIER_NOW, TIER_TODAY } from "../lib/priority";
 import { ago } from "../lib/time";
 import { useRouter, type FeedTab } from "../router";
@@ -64,7 +64,7 @@ export function Feed({ tab = "now" }: { tab?: FeedTab }) {
               <option value="">Anyone</option>
               <option value="me">Waiting on me</option>
               <option value="none">No owner</option>
-              {TEAM.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {teamList().map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
           {filtersOn && <button className="link" onClick={() => { setSources([]); setOwner(""); }}>Clear filters</button>}

@@ -1,5 +1,6 @@
 import type { Ranked, WorkItem } from "../types";
-import { firstName, nameOf } from "./people";
+import { firstName, manager, nameOf } from "./people";
+import { briefingPrompt, extractJson, nudgePrompt, type BriefingContext, type NudgeFacts } from "./prompts";
 import { isToday, span, dueLabel } from "./time";
 
 /**
@@ -7,18 +8,16 @@ import { isToday, span, dueLabel } from "./time";
  *
  * Three providers, tried in order:
  *  1. Claude through the claude.ai Artifact runtime (`sample`), when the app is
- *     opened as a published artifact. Runs on the viewer's own Claude account.
- *  2. Claude through the Anthropic Messages API, via the Vite dev proxy, when
- *     the dev server was started with ANTHROPIC_API_KEY.
+ *     opened as a published artifact inside Claude.
+ *  2. Google Gemini through WorkRadar's own server (/api/ai/*), when the server
+ *     runs with GEMINI_API_KEY. The key never reaches the browser, and the
+ *     server builds the prompt itself from structured data.
  *  3. A local rules-based writer, so the app always shows a briefing even with
  *     no model available. The UI labels it as rules-based, never as AI.
  *
  * Whatever the model returns is validated: every item it cites must exist in
  * the data it was given, or the citation is dropped.
  */
-
-declare const __LIVE_PROXY__: boolean;
-declare const __AI_MODEL__: string;
 
 export interface Line { text: string; ids: string[] }
 export interface Briefing {
@@ -29,7 +28,7 @@ export interface Briefing {
   suggestion: Line;
 }
 
-export type ProviderId = "claude-artifact" | "claude-api" | "offline";
+export type ProviderId = "claude-artifact" | "gemini" | "offline";
 export interface ProviderInfo { id: ProviderId; label: string }
 
 type SampleFn = ((input: string, opts?: object) => Promise<{ text: string }>) & {
@@ -45,9 +44,27 @@ function getSample(): Promise<SampleFn | null> {
   return samplePromise;
 }
 
+export interface ServerHealth {
+  ok: boolean;
+  ai: { provider: "gemini"; model: string } | null;
+  github: { repos: string[]; manager: string; authenticated: boolean } | null;
+}
+
+let healthPromise: Promise<ServerHealth | null> | null = null;
+/** Is WorkRadar's own server running here? null on static hosting (GitHub Pages, Claude). */
+export function serverHealth(): Promise<ServerHealth | null> {
+  if (!healthPromise) {
+    healthPromise = fetch("api/health", { headers: { accept: "application/json" } })
+      .then((r) => (r.ok && (r.headers.get("content-type") ?? "").includes("json") ? (r.json() as Promise<ServerHealth>) : null))
+      .catch(() => null);
+  }
+  return healthPromise;
+}
+
 export async function detectProvider(): Promise<ProviderInfo> {
+  const health = await serverHealth();
+  if (health?.ai) return { id: "gemini", label: `Gemini (${health.ai.model})` };
   if (await getSample()) return { id: "claude-artifact", label: "Claude" };
-  if (typeof __LIVE_PROXY__ !== "undefined" && __LIVE_PROXY__) return { id: "claude-api", label: `Claude (${__AI_MODEL__})` };
   return { id: "offline", label: "Rules-based summary" };
 }
 
@@ -55,64 +72,33 @@ export class AiError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
 
-async function askJson<T>(provider: ProviderId, prompt: string, signal?: AbortSignal, fresh = false): Promise<T> {
-  if (provider === "claude-artifact") {
-    const sample = await getSample();
-    if (!sample) throw new AiError("unavailable", "Claude isn't available in this view.");
-    try {
-      return await sample.json<T>(prompt, { signal, cache: { gcTime: 10 * 60_000, refresh: fresh } });
-    } catch (e) {
-      const err = e as { code?: string; message?: string };
-      throw new AiError(err.code ?? "upstream_error", err.message ?? "Claude request failed");
-    }
-  }
-  if (provider === "claude-api") {
-    const res = await fetch("/api/claude", {
-      method: "POST",
-      signal,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: __AI_MODEL__,
-        max_tokens: 1200,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!res.ok) throw new AiError(`http_${res.status}`, `Anthropic API returned ${res.status}`);
-    const data = await res.json();
-    const text: string = data?.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? "";
-    return parseJson<T>(text);
-  }
-  throw new AiError("offline", "No model configured");
+async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { method: "POST", signal, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new AiError(data?.error ?? `http_${res.status}`, data?.message ?? `Server returned ${res.status}`);
+  return data as T;
 }
 
-async function askText(provider: ProviderId, prompt: string, signal?: AbortSignal): Promise<string> {
+async function askBriefing(provider: ProviderId, ctx: BriefingContext, signal?: AbortSignal, fresh = false): Promise<unknown> {
+  if (provider === "gemini") {
+    return (await postJson<{ briefing: unknown }>("api/ai/briefing", { context: ctx, fresh }, signal)).briefing;
+  }
   if (provider === "claude-artifact") {
     const sample = await getSample();
     if (!sample) throw new AiError("unavailable", "Claude isn't available in this view.");
     try {
-      return (await sample(prompt, { signal, modelTier: "quick" })).text.trim();
+      return await sample.json(briefingPrompt(ctx), { signal, cache: { gcTime: 10 * 60_000, refresh: fresh } });
     } catch (e) {
       const err = e as { code?: string; message?: string };
       throw new AiError(err.code ?? "upstream_error", err.message ?? "Claude request failed");
     }
-  }
-  if (provider === "claude-api") {
-    const res = await fetch("/api/claude", {
-      method: "POST", signal, headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: __AI_MODEL__, max_tokens: 400, messages: [{ role: "user", content: prompt }] }),
-    });
-    if (!res.ok) throw new AiError(`http_${res.status}`, `Anthropic API returned ${res.status}`);
-    const data = await res.json();
-    return (data?.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? "").trim();
   }
   throw new AiError("offline", "No model configured");
 }
 
 export function parseJson<T>(text: string): T {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const body = fenced ? fenced[1] : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   try {
-    return JSON.parse(body) as T;
+    return extractJson(text) as T;
   } catch {
     throw new AiError("invalid_json", "The model's reply was not valid JSON");
   }
@@ -122,7 +108,7 @@ export function parseJson<T>(text: string): T {
 // Context sent to the model: compact, factual, already ranked.
 // ---------------------------------------------------------------------------
 
-export function buildContext(ranked: Ranked[], items: WorkItem[], now = Date.now()) {
+export function buildContext(ranked: Ranked[], items: WorkItem[], now = Date.now()): BriefingContext {
   const open = ranked.slice(0, 18).map((r) => ({
     id: r.item.id,
     key: r.item.key,
@@ -141,32 +127,9 @@ export function buildContext(ranked: Ranked[], items: WorkItem[], now = Date.now
   const doneToday = items
     .filter((i) => i.status === "done" && isToday(i.updatedAt, now))
     .map((i) => ({ id: i.id, key: i.key, title: i.title, by: nameOf(i.assignee), when: span(i.updatedAt, now) + " ago" }));
-  return { manager: "Ashok (engineering manager, Payments Platform)", openItems: open, finishedToday: doneToday };
-}
-
-export function briefingPrompt(ctx: ReturnType<typeof buildContext>): string {
-  return [
-    "You are WorkRadar, a chief-of-staff assistant for an engineering manager.",
-    "Write today's briefing from the work items below. They come from Jira, GitHub, Slack and email and are already ranked by urgency (priority: now > today > later).",
-    "",
-    "Rules:",
-    "- Use only facts in the data. Do not invent people, numbers, times or causes.",
-    "- Address the manager as \"you\". Plain, specific sentences. No filler, no exclamation marks.",
-    "- Each line is one sentence, at most 24 words, and names the concrete next step where there is one.",
-    "- Cite the item ids each line is about in its \"ids\" array, using only ids from the data.",
-    "- When several items are one situation (an incident, its PR, a customer email), cover them in one line.",
-    "- \"blocked\": who is blocked, on what, for how long. Lead with anything blocked on the manager (waitingOn \"You\").",
-    "",
-    "Reply with only this JSON:",
-    '{"headline": "one sentence on the state of the day",',
-    ' "attention": [{"text": "...", "ids": ["..."]}],   // 2-3 lines, most urgent first',
-    ' "blocked": [{"text": "...", "ids": ["..."]}],     // up to 4 lines',
-    ' "happened": [{"text": "...", "ids": ["..."]}],    // up to 3 lines from finishedToday',
-    ' "suggestion": {"text": "the single best thing to do in the next 30 minutes", "ids": ["..."]}}',
-    "",
-    "DATA:",
-    JSON.stringify(ctx),
-  ].join("\n");
+  const label: Record<string, string> = { jira: "Jira", github: "GitHub", slack: "Slack", email: "email" };
+  const sources = [...new Set(items.map((i) => label[i.source]))];
+  return { manager: `${manager().name} (${manager().role})`, sources, openItems: open, finishedToday: doneToday };
 }
 
 function cleanLine(l: unknown, known: Set<string>): Line | null {
@@ -205,7 +168,7 @@ export async function generateBriefing(
   }
   if (provider === "offline") return offlineBriefing(ranked, items);
   const ctx = buildContext(ranked, items);
-  const raw = await askJson<unknown>(provider, briefingPrompt(ctx), opts.signal, opts.fresh);
+  const raw = await askBriefing(provider, ctx, opts.signal, opts.fresh);
   return validateBriefing(raw, items);
 }
 
@@ -273,22 +236,24 @@ export function wantsReply(item: WorkItem): boolean {
   return !!item.needsReplyFromMe && item.blocker?.waitingOn !== "unassigned";
 }
 
-export function nudgePrompt(item: WorkItem): string {
+/** Facts for one item, with names resolved, ready for the server-side prompt. */
+export function nudgeFacts(item: WorkItem): NudgeFacts {
   const b = item.blocker;
-  const task = wantsReply(item)
-    ? `Draft Ashok's reply to ${nameOf(item.author)} (${item.source === "email" ? "an email" : "a Slack message"}, 2-4 sentences, plain and direct, no emoji). Acknowledge the ask and commit to a concrete next step. Do not promise dates or facts that are not in the data; where a fact is unknown, say Ashok will confirm it and when.`
-    : "Draft a short Slack message (2-3 sentences, friendly and direct, no emoji) that an engineering manager named Ashok could send to move this work forward.";
-  return [
-    task,
-    "Use only the facts below. Name the specific ask and a time. Reply with the message text only.",
-    "",
-    JSON.stringify({
-      key: item.key, title: item.title, detail: item.body,
-      owner: nameOf(item.assignee), author: nameOf(item.author),
-      blocker: b ? { reason: b.reason, waitingOn: nameOf(b.waitingOn), for: span(b.since) } : null,
-      due: item.dueAt ? dueLabel(item.dueAt) : null,
-    }),
-  ].join("\n");
+  const reply = wantsReply(item);
+  const recipient = reply
+    ? nameOf(item.author)
+    : b && b.waitingOn !== "me" && b.waitingOn !== "unassigned" ? nameOf(b.waitingOn)
+    : item.assignee && item.assignee !== "me" ? nameOf(item.assignee) : "the team";
+  return {
+    reply,
+    manager: manager().name,
+    channel: item.source === "email" ? "email" : item.source === "github" ? "GitHub" : "Slack",
+    recipient,
+    key: item.key, title: item.title, detail: item.body,
+    owner: nameOf(item.assignee), author: nameOf(item.author),
+    blocker: b ? { reason: b.reason, waitingOn: nameOf(b.waitingOn), for: span(b.since) } : null,
+    due: item.dueAt ? dueLabel(item.dueAt) : null,
+  };
 }
 
 export function offlineNudge(item: WorkItem): string {
@@ -311,5 +276,13 @@ export function offlineNudge(item: WorkItem): string {
 export async function draftNudge(provider: ProviderId, item: WorkItem, forceFail = false): Promise<string> {
   if (forceFail) throw new AiError("upstream_error", "Simulated failure (demo setting)");
   if (provider === "offline") return offlineNudge(item);
-  return askText(provider, nudgePrompt(item));
+  if (provider === "gemini") return (await postJson<{ text: string }>("api/ai/draft", { facts: nudgeFacts(item) })).text;
+  const sample = await getSample();
+  if (!sample) throw new AiError("unavailable", "Claude isn't available in this view.");
+  try {
+    return (await sample(nudgePrompt(nudgeFacts(item)), { modelTier: "quick" })).text.trim();
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    throw new AiError(err.code ?? "upstream_error", err.message ?? "Claude request failed");
+  }
 }

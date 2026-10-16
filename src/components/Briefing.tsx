@@ -7,13 +7,13 @@ import { Icon } from "./Icon";
 
 type Phase = "detecting" | "loading" | "ready" | "error";
 
-const ERROR_COPY: Record<string, string> = {
-  not_granted: "Claude wasn't allowed to run for this page, so you're seeing the rules-based summary.",
-  rate_limited: "Claude is busy for your account right now. Try again in a minute.",
+const errorCopy = (code: string, ai: string): string => ({
+  not_granted: `${ai} wasn't allowed to run for this page, so you're seeing the rules-based summary.`,
+  rate_limited: `${ai} is busy or the free quota is used up for now. Try again in a minute.`,
   session_expired: "Your Claude session expired. Sign in again, then retry.",
-  invalid_json: "Claude's reply couldn't be read. Retry usually fixes this.",
-  invalid_shape: "Claude's reply was missing parts of the briefing. Retry usually fixes this.",
-};
+  invalid_json: `${ai}'s reply couldn't be read. Retry usually fixes this.`,
+  invalid_shape: `${ai}'s reply was missing parts of the briefing. Retry usually fixes this.`,
+} as Record<string, string>)[code] ?? `WorkRadar couldn't reach ${ai}. You're seeing the rules-based summary instead.`;
 
 export function Briefing() {
   const { ranked, items, state } = useStore();
@@ -49,7 +49,7 @@ export function Briefing() {
       .then((b) => { if (!c.signal.aborted) { setAi(b); setPhase("ready"); setAt(Date.now()); } })
       .catch((e: AiError) => {
         if (c.signal.aborted || e.code === "cancelled") return;
-        setErr(ERROR_COPY[e.code] ?? "WorkRadar couldn't reach Claude. You're seeing the rules-based summary instead.");
+        setErr(errorCopy(e.code, aiName));
         setPhase("error");
         setAi(null);
       });
@@ -62,6 +62,8 @@ export function Briefing() {
     return () => clearTimeout(t);
   }, [provider, signature, state.aiFails]);
 
+  const aiName = provider?.id === "gemini" ? "Gemini" : provider?.id === "claude-artifact" ? "Claude" : "the AI model";
+  const sourceCount = new Set(items.map((i) => i.source)).size;
   const b = ai ?? offline;
   const isAi = !!ai;
   const keyOf = (id: string) => items.find((i) => i.id === id)?.key ?? id;
@@ -94,8 +96,8 @@ export function Briefing() {
           {isAi ? "AI briefing" : "Today's briefing"}
         </span>
         <span className="brief-prov">
-          {phase === "detecting" && "Checking for Claude…"}
-          {phase === "loading" && "Claude is reading 4 sources…"}
+          {phase === "detecting" && "Checking for an AI model…"}
+          {phase === "loading" && `${aiName} is reading ${sourceCount} source${sourceCount === 1 ? "" : "s"}…`}
           {phase === "ready" && (isAi ? `Written by ${provider?.label} · ${clock(at)}` : `Rules-based summary · ${clock(at)}`)}
           {phase === "error" && "Rules-based summary"}
         </span>
@@ -127,7 +129,7 @@ export function Briefing() {
 
       {!isAi && provider?.id === "offline" && phase !== "error" && (
         <p className="brief-note">
-          No AI model is connected in this copy, so this briefing is assembled by rules from the ranked items. Open the hosted demo inside Claude, or run locally with <code>ANTHROPIC_API_KEY</code>, to have Claude write it.
+          No AI model is connected in this copy, so this briefing is assembled by rules from the ranked items. Run WorkRadar with its server and a free <code>GEMINI_API_KEY</code> (see the README) to have Gemini write it.
         </p>
       )}
     </section>

@@ -117,13 +117,13 @@ export function ItemDetail({ id }: { id: string }) {
               </header>
               {!nudge && nudgeState !== "loading" && (
                 <p className="muted">
-                  {provider?.id === "offline" ? "WorkRadar drafts" : "Claude drafts"} {reply ? `a reply to ${nameOf(item.author)}` : "a short message to whoever can move this forward"}, using only what's in this item.
+                  {provider?.id === "offline" ? "WorkRadar drafts" : `${provider?.id === "gemini" ? "Gemini" : "Claude"} drafts`} {reply ? `a reply to ${nameOf(item.author)}` : "a short message to whoever can move this forward"}, using only what's in this item.
                 </p>
               )}
               {nudgeState === "loading" && <div className="skeleton" aria-label="Drafting message"><span /><span /><span /></div>}
               {nudge && nudgeState !== "loading" && (
                 <>
-                  {nudgeState === "error" && <p className="inline-error"><Icon name="alert" size={14} /> Claude didn't respond, so this is a template draft. Try again in a moment.</p>}
+                  {nudgeState === "error" && <p className="inline-error"><Icon name="alert" size={14} /> The AI model didn't respond, so this is a template draft. Try again in a moment.</p>}
                   <blockquote id="nudge-text" className="nudge-text">{nudge.text}</blockquote>
                   <div className="nudge-foot">
                     <span className="muted">{nudge.by === "ai" ? `Drafted by ${provider?.label}. Check it before sending.` : "Template draft (no AI model connected)."}</span>

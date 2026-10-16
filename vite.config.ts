@@ -1,36 +1,17 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Live AI locally: start the dev server with ANTHROPIC_API_KEY set.
-// The key stays in this Node process; the browser only calls /api/claude,
-// which this proxy forwards to the Anthropic Messages API with the key attached.
-export default defineConfig(({ mode }) => {
-  const env = { ...process.env, ...loadEnv(mode, process.cwd(), "") };
-  const key = env.ANTHROPIC_API_KEY;
-
-  return {
-    base: "./",
-    plugins: [react(), ...(mode === "single" ? [viteSingleFile()] : [])],
-    define: {
-      __LIVE_PROXY__: JSON.stringify(Boolean(key)),
-      __AI_MODEL__: JSON.stringify(env.ANTHROPIC_MODEL || "claude-sonnet-5-5"),
-    },
-    server: {
-      proxy: key
-        ? {
-            "/api/claude": {
-              target: "https://api.anthropic.com",
-              changeOrigin: true,
-              rewrite: () => "/v1/messages",
-              headers: {
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-              },
-            },
-          }
-        : undefined,
-    },
-    build: { outDir: mode === "single" ? "dist-single" : "dist" },
-  };
-});
+// The browser calls relative `api/...` URLs. In development those go to the
+// WorkRadar server (server/index.ts) on port 8787, which holds the Gemini and
+// GitHub keys. On static hosting (GitHub Pages, the Claude artifact) there is
+// no server, and the app falls back to mock data and a rules-based briefing.
+export default defineConfig(({ mode }) => ({
+  base: "./",
+  plugins: [react(), ...(mode === "single" ? [viteSingleFile()] : [])],
+  server: {
+    proxy: { "/api": { target: `http://localhost:${process.env.PORT || 8787}`, changeOrigin: true } },
+  },
+  build: { outDir: mode === "single" ? "dist-single" : "dist" },
+  test: { include: ["src/**/*.test.ts", "server/**/*.test.ts"] },
+}));

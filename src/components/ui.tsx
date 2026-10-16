@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { TEAM } from "../data/mock";
-import { person, nameOf } from "../lib/people";
+import { person, nameOf, teamList } from "../lib/people";
 import { HOUR, nextMorning, nextWeek, clock } from "../lib/time";
 import { useStore } from "../store";
 import type { Reason, Snooze, Source, Status, WorkItem } from "../types";
@@ -143,7 +142,7 @@ export function ItemActions({ item, compact = false }: { item: WorkItem; compact
         {(close) => (
           <>
             <div className="pop-title">Assign {item.key} to</div>
-            {TEAM.map((p) => (
+            {teamList().map((p) => (
               <button
                 key={p.id}
                 role="menuitemradio"

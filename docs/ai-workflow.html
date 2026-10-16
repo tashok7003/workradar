@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WorkRadar AI Workflow</title>
+<style>
+@page { size: A4; margin: 13mm 14mm 12mm; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 9.1pt/1.4 "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; color: #111a2c; }
+h1 { font: 700 19pt/1.1 "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif; margin: 0; letter-spacing: -.01em; }
+h2 { font: 700 10.4pt/1.2 "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif; margin: 0 0 4pt; color: #1b37b0; display: flex; gap: 6pt; align-items: baseline; }
+h2 span { font: 600 7.5pt/1 "IBM Plex Mono", monospace; color: #7a8499; }
+h3 { font: 600 9.2pt/1.3 "IBM Plex Sans", sans-serif; margin: 5pt 0 2pt; }
+p { margin: 0 0 4pt; }
+ul { margin: 0; padding-left: 12pt; }
+li { margin: 0 0 1.8pt; }
+section { margin-bottom: 9pt; }
+.head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #2446d8; padding-bottom: 6pt; margin-bottom: 9pt; }
+.meta { font-size: 8pt; color: #47526a; text-align: right; line-height: 1.45; }
+.lede { font-size: 9.6pt; color: #2b3447; }
+table { width: 100%; border-collapse: collapse; font-size: 8.4pt; }
+th { text-align: left; font-weight: 600; font-size: 7.6pt; text-transform: uppercase; letter-spacing: .05em; color: #47526a; border-bottom: 1px solid #c2cbd9; padding: 2.5pt 4pt; }
+td { border-bottom: 1px solid #e3e8f0; padding: 3pt 4pt; vertical-align: top; }
+td:first-child { font-weight: 600; }
+tr { break-inside: avoid; }
+pre { margin: 2pt 0 4pt; padding: 5pt 7pt; background: #f2f4f8; border-left: 2px solid #2446d8; border-radius: 0 3pt 3pt 0; font: 7.6pt/1.42 "IBM Plex Mono", monospace; white-space: pre-wrap; break-inside: avoid; }
+.note { font-size: 7.9pt; color: #5f6a80; }
+code { font: 7.9pt "IBM Plex Mono", monospace; background: #f2f4f8; padding: 0 2pt; border-radius: 2pt; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+.box { background: #f2f4f8; border-radius: 4pt; padding: 5pt 7pt; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div>
+    <h1>WorkRadar: AI Workflow</h1>
+    <div class="lede">How AI was used to plan, design and build the MVP, and what changed after review.</div>
+  </div>
+  <div class="meta">Ashok · October 2026<br>Companion to the PRD, design file and source code</div>
+</div>
+
+<section>
+  <h2><span>01</span>AI tools used</h2>
+  <table>
+    <tr><th style="width:24%">Tool</th><th style="width:44%">Used for</th><th>Where it shows up</th></tr>
+    <tr><td>Claude (Opus 5.5) in claude.ai, agentic session with file and shell tools</td><td>Turning the brief into decisions; PRD and this document; all application code, mock data and unit tests; the six design artboards; running the app in a headless browser to review screenshots; rendering the PDFs</td><td>Every deliverable</td></tr>
+    <tr><td>Claude design canvas (claude.ai)</td><td>High-fidelity screens as editable, linked artboards</td><td>UX design file</td></tr>
+    <tr><td>Claude at runtime, inside the product</td><td>Writes the daily briefing and drafts replies and nudges. Runs through the claude.ai Artifact runtime in the hosted demo, or the Anthropic Messages API locally</td><td><code>src/lib/ai.ts</code></td></tr>
+  </table>
+  <p class="note" style="margin-top:3pt">Non-AI tooling: React 18, TypeScript, Vite, Vitest, Playwright (headless Chromium for screenshots and PDF rendering).</p>
+</section>
+
+<section>
+  <h2><span>02</span>Significant prompts</h2>
+  <h3>a. Build prompts (to Claude)</h3>
+  <p>The brief went in as six messages, one per requirement block (context, PRD, UX design, working MVP, AI workflow, final deliverables), with an explicit "don't start until I say start". Claude summarised each block, flagged open decisions (stack, live vs. pre-generated AI, design tool, repo vs. ZIP), and on "start" chose defaults and logged them here. Representative steering lines from the build:</p>
+  <pre>"Mock data is acceptable" → model one realistic team (7 people, 27 items across Jira, GitHub, Slack, email) with connected stories, e.g. an incident whose fix PR waits on review while the customer's CTO emails for an ETA.
+"AI-generated summary" must be real AI where possible, but must never break for a reviewer without an API key → provider chain: Claude in the hosted demo → Claude via local API key → labelled rules-based fallback.
+Ranking must be explainable → "rules rank, AI explains": deterministic scores with visible reasons; the model only summarises the ranked list and every item it cites must exist.</pre>
+  <h3>b. Runtime prompt: daily briefing (abridged from <code>briefingPrompt()</code>)</h3>
+  <pre>You are WorkRadar, a chief-of-staff assistant for an engineering manager. Write today's briefing from the work items below. They come from Jira, GitHub, Slack and email and are already ranked by urgency.
+Rules: Use only facts in the data. Do not invent people, numbers, times or causes. Address the manager as "you". Each line is one sentence, at most 24 words, and names the concrete next step. Cite the item ids each line is about, using only ids from the data. When several items are one situation, cover them in one line. "blocked": lead with anything blocked on the manager.
+Reply with only this JSON: {headline, attention[2-3], blocked[≤4], happened[≤3], suggestion} … DATA: {…}</pre>
+  <h3>c. Runtime prompt: reply or nudge for one item (abridged from <code>nudgePrompt()</code>)</h3>
+  <pre>Draft Ashok's reply to {sender} (2-4 sentences, plain and direct, no emoji). Acknowledge the ask and commit to a concrete next step. Do not promise dates or facts that are not in the data; where a fact is unknown, say Ashok will confirm it and when.   [Blocked items instead get: "a short Slack message … to move this work forward."]</pre>
+</section>
+
+<section>
+  <h2><span>03</span>What AI generated</h2>
+  <div class="split">
+    <ul>
+      <li><b>Product:</b> requirement breakdown, PRD content (problem, personas, journey, metrics, scope, assumptions, feature split), this document.</li>
+      <li><b>Data:</b> the mock workspace in <code>src/data/mock.ts</code>, with timestamps relative to load time so the demo always reads as "today".</li>
+      <li><b>Logic:</b> priority scoring and tiers, weighted cross-source search with highlighting, the state store (assign, done, snooze, undo, persistence).</li>
+    </ul>
+    <ul>
+      <li><b>AI layer:</b> both runtime prompts, JSON parsing, citation validation, the rules-based fallback writer, provider detection, the dev-server proxy that keeps the API key off the client.</li>
+      <li><b>UI:</b> all screens, components, styles (light and dark), empty and error states, demo controls.</li>
+      <li><b>Quality:</b> 12 unit tests; scripted browser runs that click every action and capture screenshots.</li>
+      <li><b>Design:</b> six artboards on the Claude design canvas, linked as a clickable prototype.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2><span>04</span>What was modified after review</h2>
+  <p>Each first draft was checked against tests and screenshots before moving on. These are the changes that review forced, in the order they were found.</p>
+  <table>
+    <tr><th style="width:24%">Found in review</th><th style="width:38%">Problem</th><th>Change made</th></tr>
+    <tr><td>Unit test failed</td><td>Diego's incident decision ("replay the queue now or after the fix?"), blocked on the manager, scored 49 and landed in <i>Today</i>. The P1 incident itself was also only in <i>Today</i>.</td><td>Recalibrated scoring: work blocked on the manager is a flat +45; open P0/P1 incidents get +20; "tied to" applies to any open P0/P1 parent; Now threshold lowered from 60 to 55. Re-ran the full ranking table to confirm the order.</td></tr>
+    <tr><td>Ranking table dump</td><td>The new "unblocks" rule tagged the incident ticket and a draft PR as unblocking work, which was false.</td><td>Limited "Unblocks X" to direct asks waiting on the manager's reply (e.g. Lena's sign-off request).</td></tr>
+    <tr><td>Screenshot of item detail</td><td>The draft for the Acme CTO's email read "Hi team, checking on Email…": a nudge where a reply was needed.</td><td>Added a reply mode: items waiting on the manager get a reply to the sender; blocked items get a nudge to the person who can unblock them.</td></tr>
+    <tr><td>Dashboard screenshot</td><td>Repetitive copy ("waiting on you for 42m: waiting on your decision"); email keys shown as "EMAIL Email"; "Due in 48h".</td><td>Rewrote blocker reasons as phrases that complete "needs …"; email keys use the sender (e.g. "Acme · CTO"); due labels switch to days after 36h.</td></tr>
+    <tr><td>Scripted click-through</td><td>Actions taken in the session didn't appear in "What happened today": their timestamp was later than the cached clock.</td><td>Fixed the "today" filter so new actions show immediately.</td></tr>
+    <tr><td>Feed screenshot</td><td>Buttons like "Assign · Diego" had varying widths, so scores and actions didn't line up.</td><td>Fixed-width Assign / Reassign and Snooze buttons; the owner stays in the row text.</td></tr>
+    <tr><td>Code review</td><td>Search highlighting could drift on accented text; a snippet could break when the match was in another field.</td><td>Highlight uses plain lowercasing so indices align; snippet falls back to the start of the text.</td></tr>
+    <tr><td>First PDF render</td><td>The PRD came out at 3 pages with fallback fonts.</td><td>Embedded the fonts, reorganised sections to fit the 2-page limit.</td></tr>
+  </table>
+  <p class="note" style="margin-top:3pt">Human direction: Ashok wrote the brief and its constraints, split it into the six requirement blocks, and decided when work started. Hand edits made after this document are recorded in the repository's commit history.</p>
+</section>
+
+<section>
+  <h2><span>05</span>Key trade-offs</h2>
+  <table>
+    <tr><th style="width:25%">Decision</th><th style="width:37%">Why</th><th>Cost accepted</th></tr>
+    <tr><td>Rules rank, AI explains</td><td>Order is stable, testable and explainable point by point; managers can see why something is on top.</td><td>Rules miss nuance a model might catch (e.g. tone of an angry email). Weights need tuning per team.</td></tr>
+    <tr><td>Validate every AI citation</td><td>Drops any item id the model invents, so links in the briefing always open a real item.</td><td>Prose itself can't be fully verified; the prompt restricts it to supplied facts.</td></tr>
+    <tr><td>Three AI providers with a labelled fallback</td><td>Reviewers always see a working briefing, with or without a key; the UI never calls the fallback "AI".</td><td>Two code paths to maintain; the fallback reads more mechanically.</td></tr>
+    <tr><td>Mock data, no integrations</td><td>Lets the MVP prove the experience in days, with realistic linked stories.</td><td>Skips the hardest real problems: OAuth scopes, identity mapping across tools, rate limits, detecting blockers from free text.</td></tr>
+    <tr><td>One briefing call per change, debounced and cached 10 min</td><td>Keeps the briefing current after Assign / Done / Snooze without a call per click.</td><td>A briefing can trail the latest action by under a second; repeat views reuse a cached answer.</td></tr>
+    <tr><td>Client-only state, in-memory routing</td><td>No backend; works inside the sandboxed hosted demo.</td><td>Actions don't sync across devices; no shareable deep links.</td></tr>
+  </table>
+</section>
+
+</body>
+</html>

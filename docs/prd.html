@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WorkRadar PRD</title>
+<style>
+@page { size: A4; margin: 13mm 14mm 12mm; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 9.1pt/1.38 "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; color: #111a2c; }
+h1 { font: 700 19pt/1.1 "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif; margin: 0; letter-spacing: -.01em; }
+h2 { font: 700 10.4pt/1.2 "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif; margin: 0 0 3.5pt; color: #1b37b0; display: flex; gap: 6pt; align-items: baseline; }
+h2 span { font: 600 7.5pt/1 "IBM Plex Mono", monospace; color: #7a8499; }
+p { margin: 0 0 4pt; }
+ul { margin: 0; padding-left: 12pt; }
+li { margin: 0 0 1.6pt; }
+section { margin-bottom: 8pt; break-inside: avoid; }
+.head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #2446d8; padding-bottom: 6pt; margin-bottom: 9pt; }
+.meta { font-size: 8pt; color: #47526a; text-align: right; line-height: 1.45; }
+.lede { font-size: 9.6pt; color: #2b3447; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+table { width: 100%; border-collapse: collapse; font-size: 8.4pt; }
+th { text-align: left; font-weight: 600; font-size: 7.6pt; text-transform: uppercase; letter-spacing: .05em; color: #47526a; border-bottom: 1px solid #c2cbd9; padding: 2.5pt 4pt; }
+td { border-bottom: 1px solid #e3e8f0; padding: 3pt 4pt; vertical-align: top; }
+td:first-child { font-weight: 600; }
+.journey { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5pt; }
+.step { border: 1px solid #dbe1ea; border-top: 3px solid #2446d8; border-radius: 4pt; padding: 4pt 5pt; font-size: 8.2pt; }
+.step b { display: block; font-size: 8.4pt; margin-bottom: 1pt; }
+.step i { display: block; font-style: normal; color: #7a8499; font: 500 7.2pt/1.2 "IBM Plex Mono", monospace; margin-bottom: 2pt; }
+.tag { display: inline-block; font: 600 7pt/1.4 "IBM Plex Mono", monospace; padding: 0 4pt; border-radius: 3pt; }
+.must { background: #fce8e6; color: #b02a23; }
+.nice { background: #e4e9ff; color: #1b37b0; }
+.built { color: #1d7a4b; font-weight: 600; }
+.note { font-size: 7.8pt; color: #5f6a80; }
+.box { background: #f2f4f8; border-radius: 4pt; padding: 5pt 7pt; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div>
+    <h1>WorkRadar: Product Requirements</h1>
+    <div class="lede">One AI-assisted view of a team's work, so a manager knows what needs them without opening four tools.</div>
+  </div>
+  <div class="meta">Ashok · v1.0 · October 2026<br>Status: MVP built on mock data</div>
+</div>
+
+<section>
+  <h2><span>01</span>Problem statement</h2>
+  <p>An engineering manager's team works across Jira, GitHub, Slack and email. Each tool shows its own slice and its own idea of priority, and none of them answers the manager's real morning questions: <b>what is the top work today, what happened, what needs me now, and who is blocked?</b> Managers rebuild that picture by hand, tab by tab, several times a day. The costliest gap is work that is blocked <i>on the manager</i> (a decision, a sign-off, a reply). It sits in a DM or an email thread, invisible in every tracker, and usually surfaces only at the next stand-up, a day late.</p>
+</section>
+
+<div class="cols">
+  <section>
+    <h2><span>02</span>Target users</h2>
+    <ul>
+      <li><b>Primary:</b> engineering managers and team leads with 5–12 reports whose work spans a tracker, a code host, chat and email.</li>
+      <li><b>Secondary:</b> tech leads who triage for their team, and product managers who track delivery across the same tools.</li>
+      <li><b>Later:</b> directors who need a cross-team risk view (not in MVP).</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span>03</span>Key pain points</h2>
+    <ul>
+      <li><b>Tool-hopping:</b> four tools and dozens of tabs to answer one question.</li>
+      <li><b>Invisible blockers on the manager:</b> asks live in DMs, not in any status field.</li>
+      <li><b>Conflicting priority:</b> a P2 ticket, a CTO email and an on-call ping use different scales.</li>
+      <li><b>No "what happened today":</b> merges, deploys and closes are scattered across feeds.</li>
+      <li><b>Search is per-tool:</b> one customer issue spans a ticket, a PR, a thread and an email.</li>
+      <li><b>Noise:</b> FYIs look the same as asks that need action.</li>
+    </ul>
+  </section>
+</div>
+
+<section>
+  <h2><span>04</span>User personas</h2>
+  <table>
+    <tr><th style="width:17%">Persona</th><th style="width:27%">Context</th><th style="width:28%">Goal</th><th>Frustration today</th></tr>
+    <tr><td>Ashok, Engineering Manager (primary)</td><td>Payments team of 7, owns on-call and a customer escalation path; meetings fill most afternoons.</td><td>Know the three things that need him within two minutes of sitting down, and unblock people before they lose a day.</td><td>Found out at stand-up that Sara had waited two days for his sign-off, which was buried in a Slack DM.</td></tr>
+    <tr><td>Marcus Lee, Tech Lead</td><td>Codes most of the day and triages for a team of 5.</td><td>Triage in five minutes, then return to focus time.</td><td>Tracker priority and real urgency disagree, so he checks everything himself.</td></tr>
+    <tr><td>Elena Rossi, Director (later)</td><td>Four teams, weekly risk reviews.</td><td>See which teams are blocked, and on whom, without asking each manager.</td><td>Status reports are a week stale by the time she reads them.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span>05</span>User journey (Ashok's morning with WorkRadar)</h2>
+  <div class="journey">
+    <div class="step"><i>9:00 · ORIENT</i><b>Open the dashboard</b>Four counts answer the four questions; a Claude-written briefing names the day's story with links to each item.</div>
+    <div class="step"><i>9:02 · ACT</i><b>Do the "Do next"</b>Opens the item, reads why it ranks high, drafts a reply with AI, copies it to Slack.</div>
+    <div class="step"><i>9:05 · TRIAGE</i><b>Clear the Now tier</b>Assigns the unowned bug, snoozes the headcount email to Friday, marks a handled item done, each with Undo.</div>
+    <div class="step"><i>9:10 · UNBLOCK</i><b>Check who's blocked</b>Work blocked on him is listed first; he nudges a reviewer whose PR blocks the incident fix.</div>
+    <div class="step"><i>ANY TIME · RECALL</i><b>Search</b>"Acme" returns the incident ticket, the CTO's email and the on-call thread together.</div>
+  </div>
+  <p class="note" style="margin-top:3pt">Today the same loop means opening Jira, GitHub, Slack and email separately and holding the joins in his head.</p>
+</section>
+
+<section>
+  <h2><span>06</span>Success metrics</h2>
+  <table>
+    <tr><th style="width:30%">Metric</th><th style="width:44%">Definition</th><th>MVP target (6-week pilot)</th></tr>
+    <tr><td>North star: time to first action</td><td>Open WorkRadar → first Assign, Done, Snooze or drafted reply on a <i>Now</i> item</td><td>Median under 2 minutes</td></tr>
+    <tr><td>Blocked-on-manager clearance</td><td>Share of items blocked on the manager resolved within 4 working hours</td><td>80% or more</td></tr>
+    <tr><td>Blocker age</td><td>Median hours an item stays blocked, versus the 2 weeks before pilot</td><td>30% lower</td></tr>
+    <tr><td>Habit</td><td>Managers who open WorkRadar on 4 of 5 working days</td><td>60% of pilot managers</td></tr>
+    <tr><td>Briefing usefulness</td><td>Thumbs-up rate on the briefing; clicks on its item links</td><td>70% thumbs-up</td></tr>
+    <tr><td>Guardrail: trust</td><td>Briefings reported as factually wrong; every cited item is validated against source data</td><td>Under 2%</td></tr>
+  </table>
+</section>
+
+<div class="cols">
+  <section>
+    <h2><span>07</span>MVP scope</h2>
+    <p><b>In:</b> one team; Jira, GitHub, Slack and email as mock data; dashboard; AI briefing with item citations and a rules-based fallback; priority feed with an explained score; item detail; cross-source search; Assign, Mark done and Snooze with Undo; source-sync, AI-failure and empty states.</p>
+    <p><b>Out:</b> real OAuth integrations and write-back to source tools; notifications and digests; multiple teams; user-tuned scoring; native mobile apps.</p>
+    <div class="box note"><b>Design principle:</b> rules rank, AI explains. Ranking is deterministic so the order is stable and every point is visible; Claude only summarises and drafts, and every item it cites must exist in the data.</div>
+  </section>
+  <section>
+    <h2><span>08</span>Assumptions</h2>
+    <ul>
+      <li>Managers will check one dashboard daily if it saves them the tool-hop.</li>
+      <li>Source data carries enough structure (status, owner, due date, severity, links) to rank reliably.</li>
+      <li>"Blocked on the manager" can be detected from blocked statuses plus direct asks; the MVP's mock data marks it explicitly.</li>
+      <li>One identity per person can be mapped across tools.</li>
+      <li>Read-only OAuth scopes for these tools are acceptable to IT and security.</li>
+      <li>Managers trust a transparent rule-based order more than an AI-chosen one.</li>
+      <li>One cached briefing call per page load keeps model cost low.</li>
+    </ul>
+  </section>
+</div>
+
+<section>
+  <h2><span>09</span>Features</h2>
+  <table>
+    <tr><th style="width:7%"></th><th style="width:31%">Feature</th><th style="width:47%">Why it matters</th><th>MVP</th></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>Unified feed from four sources</td><td>The core promise: one place instead of four.</td><td class="built">Built (mock)</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>Priority score with visible reasons and Now / Today / Later tiers</td><td>A shared scale across tools; reasons make the order trustworthy.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>AI briefing with item citations and a labelled fallback</td><td>Answers the four questions in under a minute of reading.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>Who's blocked, with blocked-on-you first</td><td>Targets the costliest gap: work waiting on the manager.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>What happened today timeline</td><td>Merges, deploys, closes and the manager's own actions in one list.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>Item detail; cross-source search</td><td>Context and recall without leaving WorkRadar.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>Assign, Mark done, Snooze, each with Undo</td><td>Triage where the manager reads, not in another tab.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag must">MUST</span></td><td>Source health, empty and error states</td><td>A missing source must never look like "nothing to do".</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag nice">NICE</span></td><td>AI-drafted reply or nudge per item</td><td>Turns an insight into a sent message.</td><td class="built">Built</td></tr>
+    <tr><td><span class="tag nice">NICE</span></td><td>Natural-language questions ("what's blocking Acme?")</td><td>Faster recall than keywords for fuzzy questions.</td><td>Later</td></tr>
+    <tr><td><span class="tag nice">NICE</span></td><td>Write-back to Jira and Slack; 9am digest in Slack or email</td><td>Close the loop where the team already works.</td><td>Later</td></tr>
+    <tr><td><span class="tag nice">NICE</span></td><td>Tunable scoring weights; calendar context; director view; blocker-age trends</td><td>Fit each team's norms and scale beyond one team.</td><td>Later</td></tr>
+  </table>
+</section>
+
+</body>
+</html>

@@ -2,97 +2,83 @@
 
 One screen that tells an engineering manager what needs them now, what their team is working on today, who is blocked, and what already happened, without opening Jira, GitHub, Slack and email separately.
 
-**Live demo:** https://tashok7003.github.io/workradar/ (static build: mock team and rules-based briefing)
+This is the working MVP for the WorkRadar case study. It runs on mock data for a seven-person Payments team. No real integrations are connected.
 
-## What runs where
+## Run it
 
-| Mode | Data | AI briefing and drafts | How to get it |
-|---|---|---|---|
-| Static demo (GitHub Pages) | Mock team across Jira, GitHub, Slack, email | Rules-based, labelled as such | Open the live link |
-| Full app (local or Render) | Mock team **or live GitHub** (switch in Demo controls) | **Google Gemini** (free tier) | `npm run dev` with a `.env` |
-| Inside Claude (hosted artifact) | Mock team | Claude, on the viewer's account | Open the Claude artifact link |
-
-## Run the full app
-
-Requires Node 20.6 or newer.
+Requires Node 18 or newer.
 
 ```bash
 npm install
-cp .env.example .env     # then fill in the values below
-npm run dev              # web on http://localhost:5173, API on :8787
+npm run dev          # http://localhost:5173
 ```
 
-What to put in `.env`:
+That's all you need. The AI briefing falls back to a rules-based summary when no model is connected, and the UI labels it as such.
 
-1. **`GEMINI_API_KEY`**: free key from [Google AI Studio](https://aistudio.google.com/apikey). This turns on the AI briefing and the "Draft a reply / nudge" button.
-2. **`GITHUB_REPOS`**: the repositories to watch, e.g. `tashok7003/workradar,tashok7003/raptric-connect`.
-3. **`GITHUB_MANAGER`**: your GitHub login. Review requests to you, `@mentions` and "blocked on @you" show as blocked on you.
-4. **`GITHUB_TOKEN`** (recommended): a fine-grained token with read-only access to Metadata, Issues, Pull requests and Checks. Without it GitHub allows 60 requests an hour.
-5. **`GITHUB_TEAM`** (optional): display names, e.g. `tashok7003:Ashok:Engineering manager,octocat:Mona:Backend`.
+### With live AI (optional)
 
-Then open **Demo controls → Data → Live GitHub**.
+```bash
+ANTHROPIC_API_KEY=sk-ant-... npm run dev
+# optional: ANTHROPIC_MODEL=claude-haiku-5-5 (default claude-sonnet-5-5)
+```
 
-Nothing is required: with no `.env`, the app runs on mock data with the rules-based briefing.
+The key stays in the Vite dev server. The browser calls `/api/claude`, and the dev proxy forwards it to the Anthropic Messages API with the key attached, so the key never reaches the client bundle.
 
-### Deploy the full app for free
+### Live on GitHub Pages
 
-`render.yaml` deploys UI and API as one service on Render's free plan: Render → New → Blueprint → this repo, then paste the same values. (The free plan sleeps when idle; the first request after a pause takes about 30 seconds.)
+Every push to `main` runs the tests, builds the app and deploys it to GitHub Pages (`.github/workflows/deploy.yml`). The Pages build has no model connected, so its briefing is the labelled rules-based version.
 
-## What the live GitHub connector reads
+### Hosted demo inside Claude
 
-| GitHub | Becomes in WorkRadar |
+The same build is published as a claude.ai Artifact. When opened there, the briefing and the "Draft a reply / nudge" button run on Claude through the viewer's own Claude account (the page asks once for permission).
+
+### Other scripts
+
+| Command | What it does |
 |---|---|
-| Open issues | Tickets. Labels set severity (`p0`–`p3`, `critical`, `high`, `bug`, `low`) and tags (`security`, `customer…`, `incident`). Milestone due date becomes the due date. |
-| "Blocked by @user / #12" in an issue, or a `blocked` label | A blocker with who or what it waits on |
-| `@you` in an issue body | "Waiting on your reply" |
-| Open pull requests | PRs. Review requested from you means blocked on you; from someone else for over 24h means blocked on them. |
-| Check runs on the PR's latest commit | "CI failing" |
-| `fixes #12` in a PR | Linked both ways with the issue |
-| PRs merged and issues closed in the last 24h | "What happened today" |
+| `npm test` | Unit tests for ranking, search and AI-output validation (Vitest) |
+| `npm run build` | Type-check and build to `dist/` |
+| `npm run build:single` | Build one self-contained HTML file for the hosted demo (`dist-single/workradar.html`) |
+
+## What's in it
+
+| Screen | What you can do |
+|---|---|
+| Dashboard | Four answers at a glance (need you now, blocked, top work today, done today), the AI briefing with clickable citations, top items, who's blocked, today's timeline |
+| Priority feed | Tabs for Now / Today / Later / All / Snoozed, filter by source and owner, score on every row |
+| Item detail | Blocker, "why it's ranked here" score breakdown, AI-drafted reply or nudge, activity, related items |
+| Search | Keyword search across every source, people, labels and activity, with highlighting and source filters |
+| Empty and error states | Per-tab empty states, no-results, source sync failure banner with retry, AI failure fallback, empty workspace |
+
+Actions on any item: **Assign**, **Snooze** (1h, 3h, tomorrow 9:00, next Monday 9:00) and **Mark done**, each with Undo. State persists in `localStorage`. **Demo controls** (bottom of the sidebar) simulate a source outage, an AI failure and an empty workspace, and reset the data.
+
+Keyboard: `/` opens search.
 
 ## How it works
 
 ```
-GitHub API ─┐                         ┌─► rank() (deterministic, explained) ─► UI
-            ├─► server (/api) ─► store┤
-mock data ──┘   holds all keys        └─► briefing context ─► server ─► Gemini ─► validate citations ─► UI
-                                                                      └─► rules-based fallback
+mock sources ─► store (overrides: assign, done, snooze) ─► rank() ─► UI
+                                                         └─► briefing context ─► Claude ─► validate ─► UI
+                                                                                └─► rules-based fallback
 ```
 
-- **Rules rank, AI explains.** Priority scores are deterministic, so the order is stable and every point is visible. Gemini only summarises the ranked list and drafts messages.
-- **Keys stay on the server.** The browser never sees the Gemini key or GitHub token. The server builds AI prompts from structured data itself, so it is not an open proxy; it also rate-limits AI calls per visitor and caches identical requests for 10 minutes to stay inside the free quota.
-- **Citations are validated.** Any item id Gemini invents is dropped before the briefing renders.
-
-## Scripts
-
-| Command | What it does |
-|---|---|
-| `npm run dev` | API server and web app together, with reload |
-| `npm start` | Production server: API plus the built app from `dist/` |
-| `npm test` | 27 tests: ranking, search, AI validation, GitHub mapping, Gemini client, API routes |
-| `npm run build` | Type-check and build the web app to `dist/` |
-| `npm run build:single` | One self-contained HTML file for the Claude-hosted demo |
-
-Every push to `main` runs the tests and deploys the static build to GitHub Pages (`.github/workflows/deploy.yml`).
+- **Ranking is deterministic** (`src/lib/priority.ts`). Each item gets points for severity, blockers (work blocked on the manager scores highest), due dates, customer impact, security, stale reviews, missing owners, and links to an active incident. Score ≥ 55 is *Now*, 32–54 is *Today*, the rest is *Later*. Every point is shown to the user as a reason chip.
+- **AI explains, it doesn't rank** (`src/lib/ai.ts`). Claude gets the already-ranked items as compact JSON and writes the briefing as JSON. Every item it cites is checked against the data, and unknown ids are dropped. If the call fails or the reply is malformed, the rules-based briefing is shown with a notice.
+- **Routing** is in-memory so the app also works inside the sandboxed Artifact frame.
 
 ## Project layout
 
 ```
-server/
-  app.ts            API routes, rate limit, caches; serves dist/ in production
-  github.ts         GitHub REST client and the mapping to WorkItem
-  gemini.ts         Gemini client (Interactions API, falls back to generateContent)
-  config.ts         environment parsing
 src/
-  data/mock.ts      mock team and 27 work items
-  lib/priority.ts   scoring rules and tiers
-  lib/ai.ts         provider detection, validation, rules-based fallback
-  lib/prompts.ts    prompt builders shared by browser and server
-  lib/search.ts     weighted multi-field search and highlighting
-  store.tsx         state, data source switch, actions, persistence
-  pages/            Dashboard, Feed, ItemDetail, Search
+  data/mock.ts          team and 27 work items, timestamps relative to load time
+  lib/priority.ts       scoring rules and tiers
+  lib/ai.ts             providers, prompts, output validation, rules-based fallback
+  lib/search.ts         weighted multi-field search and highlighting
+  store.tsx             state, actions, persistence
+  pages/                Dashboard, Feed, ItemDetail, Search
+  components/           Briefing, ItemRow, shared UI
 ```
 
-## Not built yet
+## Where AI was used
 
-Login and a database (actions are saved in the browser), write-back to GitHub (Assign / Done change WorkRadar only), and the Jira, Slack and email connectors. See `docs/` for the PRD and AI Workflow.
+See `docs/WorkRadar_AI_Workflow.pdf` for the full record: tools, prompts, what was generated, what changed after review, and trade-offs. The PRD is `docs/WorkRadar_PRD.pdf`; both are rendered from the HTML sources beside them.

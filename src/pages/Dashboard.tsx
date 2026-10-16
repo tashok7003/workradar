@@ -2,7 +2,8 @@ import { Briefing } from "../components/Briefing";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
 import { Avatar, EmptyState, SourceBadge } from "../components/ui";
-import { firstName, manager, nameOf } from "../lib/people";
+import { ME } from "../data/mock";
+import { firstName, nameOf } from "../lib/people";
 import { ago, isToday, span } from "../lib/time";
 import { useRouter } from "../router";
 import { useStore } from "../store";
@@ -29,28 +30,13 @@ export function Dashboard() {
       <div className="page">
         <header className="page-head">
           <p className="eyebrow">{dateLabel}</p>
-          <h1>{greeting(state.now)}, {manager().name.split(" ")[0]}</h1>
+          <h1>{greeting(state.now)}, {ME.name.split(" ")[0]}</h1>
         </header>
-        {state.loading ? (
-          <div className="panel" aria-busy="true">
-            <p className="muted">Reading pull requests, issues and CI from {state.github?.repos.join(", ") ?? "GitHub"}…</p>
-            <div className="skeleton"><span /><span /><span /></div>
-          </div>
-        ) : state.loadError ? (
-          <EmptyState
-            art="search"
-            title="GitHub data couldn't load"
-            body={state.loadError}
-          />
-        ) : (
-          <EmptyState
-            title="All clear across your sources"
-            body={state.source === "github"
-              ? `Nothing is open in ${state.github?.repos.join(", ")}, and nothing merged or closed in the last 24 hours. WorkRadar will surface new pull requests and issues as they land.`
-              : "Nothing is open in Jira, GitHub, Slack or email for your team. WorkRadar will surface new work as soon as it lands."}
-            action={<button className="btn btn-primary" onClick={() => go({ name: "search" })}><Icon name="search" size={15} /> Search past work</button>}
-          />
-        )}
+        <EmptyState
+          title="All clear across your sources"
+          body="Nothing is open in Jira, GitHub, Slack or email for your team. WorkRadar will surface new work as soon as it lands."
+          action={<button className="btn btn-primary" onClick={() => go({ name: "search" })}><Icon name="search" size={15} /> Search past work</button>}
+        />
       </div>
     );
   }
@@ -73,7 +59,7 @@ export function Dashboard() {
     <div className="page">
       <header className="page-head">
         <p className="eyebrow">{dateLabel}</p>
-        <h1>{greeting(state.now)}, {manager().name.split(" ")[0]}</h1>
+        <h1>{greeting(state.now)}, {ME.name.split(" ")[0]}</h1>
       </header>
 
       <nav className="answers" aria-label="Today at a glance">

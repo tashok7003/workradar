@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon, RadarMark } from "./components/Icon";
 import { Avatar, Banner, Popover, SOURCE_LABEL, ToastProvider } from "./components/ui";
-import { manager } from "./lib/people";
-import { ago } from "./lib/time";
+import { ME } from "./data/mock";
 import { Dashboard } from "./pages/Dashboard";
 import { Feed } from "./pages/Feed";
 import { ItemDetail } from "./pages/ItemDetail";
@@ -15,11 +14,10 @@ const SOURCES: Source[] = ["jira", "github", "slack", "email"];
 
 function Shell() {
   const { route, go } = useRouter();
-  const { ranked, snoozed, state, sources, server, setHealth, setAiFails, setEmpty, setSource, refresh, reset } = useStore();
+  const { ranked, snoozed, state, setHealth, setAiFails, setEmpty, reset } = useStore();
   const [retrying, setRetrying] = useState<Source | null>(null);
   const nowCount = ranked.filter((r) => r.tier === "now").length;
-  const down = SOURCES.filter((s) => sources[s] === "error");
-  const live = state.source === "github";
+  const down = SOURCES.filter((s) => state.health[s] === "error");
 
   // "/" jumps to search from anywhere, as in most work tools.
   useEffect(() => {
@@ -32,7 +30,6 @@ function Shell() {
   });
 
   const retry = (s: Source) => {
-    if (live) { refresh(); return; }
     setRetrying(s);
     // Mock reconnect: a real build would re-run the source sync here.
     setTimeout(() => { setHealth(s, true); setRetrying(null); }, 1200);
@@ -67,15 +64,10 @@ function Shell() {
           <h2>Sources</h2>
           <ul>
             {SOURCES.map((s) => (
-              <li key={s} className={sources[s] === "error" ? "is-down" : sources[s] === "off" ? "is-off" : ""}>
-                <span className={`dot dot-${sources[s] === "error" ? "error" : sources[s] === "off" ? "off" : "ok"}`} />
+              <li key={s} className={state.health[s] === "error" ? "is-down" : ""}>
+                <span className={`dot dot-${state.health[s] === "error" ? "error" : "ok"}`} />
                 <span>{SOURCE_LABEL[s]}</span>
-                <span className="src-state">
-                  {retrying === s || sources[s] === "loading" ? "Syncing…"
-                    : sources[s] === "error" ? "Sync failed"
-                    : sources[s] === "off" ? "Not connected"
-                    : live && state.github ? `Live · ${ago(state.github.fetchedAt, state.now)}` : "Mock data"}
-                </span>
+                <span className="src-state">{retrying === s ? "Syncing…" : state.health[s] === "error" ? "Sync failed" : "Mock data"}</span>
               </li>
             ))}
           </ul>
@@ -92,17 +84,8 @@ function Shell() {
           >
             {() => (
               <div className="demo">
-                <div className="pop-title">Data</div>
-                <label className="toggle">
-                  <input id="demo-src-mock" type="radio" name="demo-src" checked={!live} onChange={() => setSource("mock")} />
-                  Mock team (all four sources)
-                </label>
-                <label className={`toggle${server?.github ? "" : " is-disabled"}`} title={server?.github ? undefined : "Run the WorkRadar server with GITHUB_REPOS set"}>
-                  <input id="demo-src-gh" type="radio" name="demo-src" disabled={!server?.github} checked={live} onChange={() => setSource("github")} />
-                  <span>Live GitHub{server?.github ? ` (${server.github.repos.join(", ")})` : <small> · needs the server</small>}</span>
-                </label>
                 <div className="pop-title">Simulate states for review</div>
-                {!live && SOURCES.map((s) => (
+                {SOURCES.map((s) => (
                   <label key={s} className="toggle">
                     <input id={`demo-${s}`} type="checkbox" checked={state.health[s] === "error"} onChange={(e) => setHealth(s, !e.target.checked)} />
                     {SOURCE_LABEL[s]} sync fails
@@ -122,7 +105,7 @@ function Shell() {
           </Popover>
           <div className="me">
             <Avatar id="me" size={28} />
-            <span><strong>{manager().name}</strong><small>{manager().role}</small></span>
+            <span><strong>{ME.name}</strong><small>{ME.role}</small></span>
           </div>
         </div>
       </aside>
@@ -134,10 +117,10 @@ function Shell() {
               <Banner
                 key={s}
                 tone="error"
-                title={live ? "GitHub didn't sync" : `${SOURCE_LABEL[s]} didn't sync`}
-                action={<button className="btn btn-quiet btn-sm" onClick={() => retry(s)} disabled={retrying === s || state.loading}><Icon name="refresh" size={14} /> {retrying === s || state.loading ? "Retrying…" : "Retry"}</button>}
+                title={`${SOURCE_LABEL[s]} didn't sync`}
+                action={<button className="btn btn-quiet btn-sm" onClick={() => retry(s)} disabled={retrying === s}><Icon name="refresh" size={14} /> {retrying === s ? "Retrying…" : "Retry"}</button>}
               >
-                {live && state.loadError ? state.loadError : `Items from ${SOURCE_LABEL[s]} are missing from the feed, briefing and search until it reconnects.`}
+                Items from {SOURCE_LABEL[s]} are missing from the feed, briefing and search until it reconnects.
               </Banner>
             ))}
           </div>

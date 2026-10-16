@@ -16,7 +16,7 @@ function Mark({ text, q }: { text: string; q: string }) {
 }
 
 export function Search({ initial = "" }: { initial?: string }) {
-  const { items, state, sources } = useStore();
+  const { items, state } = useStore();
   const { go } = useRouter();
   const [q, setQ] = useState(initial);
   const [source, setSource] = useState<Source | "">("");
@@ -31,7 +31,7 @@ export function Search({ initial = "" }: { initial?: string }) {
     [items, q, source, includeDone],
   );
 
-  const offline = (Object.keys(sources) as Source[]).filter((s) => sources[s] === "error");
+  const offline = (Object.keys(state.health) as Source[]).filter((s) => state.health[s] === "error");
 
   return (
     <div className="page">

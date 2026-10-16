@@ -1,9 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
-import { buildItems, ME, TEAM } from "./data/mock";
-import { serverHealth, type ServerHealth } from "./lib/ai";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
+import { buildItems } from "./data/mock";
 import { rank } from "./lib/priority";
-import { nameOf, setPeople } from "./lib/people";
-import type { Override, Person, Ranked, Snooze, Source, SourceHealth, WorkItem } from "./types";
+import { nameOf } from "./lib/people";
+import type { Override, Ranked, Snooze, Source, SourceHealth, WorkItem } from "./types";
 
 export interface ManagerAction {
   at: number;
@@ -11,19 +10,10 @@ export interface ManagerAction {
   text: string;
 }
 
-export type DataSource = "mock" | "github";
-
-interface GithubPayload { items: WorkItem[]; people: Person[]; me: Person; repos: string[]; fetchedAt: number }
-
 interface State {
-  source: DataSource;
   base: WorkItem[];
-  loading: boolean;
-  loadError: string | null;
-  github: { repos: string[]; fetchedAt: number } | null;
   overrides: Record<string, Override>;
   log: ManagerAction[];
-  /** Simulated failures for the mock workspace (demo controls). */
   health: SourceHealth;
   aiFails: boolean;
   emptyWorkspace: boolean;
@@ -39,10 +29,6 @@ type Action =
   | { type: "health"; source: Source; ok: boolean }
   | { type: "aiFails"; on: boolean }
   | { type: "empty"; on: boolean }
-  | { type: "source"; source: DataSource }
-  | { type: "loading" }
-  | { type: "loaded"; payload: GithubPayload }
-  | { type: "loadFailed"; message: string }
   | { type: "tick" }
   | { type: "reset" };
 
@@ -59,8 +45,8 @@ function load(): Partial<State> {
 
 function save(s: State) {
   try {
-    const { overrides, log, health, aiFails, emptyWorkspace, source } = s;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ overrides, log, health, aiFails, emptyWorkspace, source }));
+    const { overrides, log, health, aiFails, emptyWorkspace } = s;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ overrides, log, health, aiFails, emptyWorkspace }));
   } catch {
     /* storage unavailable: the demo still works for this session */
   }
@@ -70,13 +56,8 @@ const HEALTHY: SourceHealth = { jira: "ok", github: "ok", slack: "ok", email: "o
 
 function init(): State {
   const saved = load();
-  const source = saved.source === "github" ? "github" : "mock";
   return {
-    source,
-    base: source === "mock" ? buildItems() : [],
-    loading: source === "github",
-    loadError: null,
-    github: null,
+    base: buildItems(),
     overrides: saved.overrides ?? {},
     log: saved.log ?? [],
     health: saved.health ?? HEALTHY,
@@ -111,40 +92,18 @@ function reducer(s: State, a: Action): State {
       return { ...s, aiFails: a.on };
     case "empty":
       return { ...s, emptyWorkspace: a.on };
-    case "source":
-      if (a.source === "mock") {
-        setPeople(TEAM, ME);
-        return { ...s, source: "mock", base: buildItems(), loading: false, loadError: null, github: null, now: Date.now() };
-      }
-      return { ...s, source: "github", base: [], loading: true, loadError: null };
-    case "loading":
-      return { ...s, loading: true, loadError: null };
-    case "loaded":
-      setPeople(a.payload.people, a.payload.me);
-      return { ...s, base: a.payload.items, loading: false, loadError: null, github: { repos: a.payload.repos, fetchedAt: a.payload.fetchedAt }, now: Date.now() };
-    case "loadFailed":
-      return { ...s, loading: false, loadError: a.message };
     case "tick":
       return { ...s, now: Date.now() };
     case "reset":
-      setPeople(TEAM, ME);
-      return { ...s, source: "mock", base: buildItems(), loading: false, loadError: null, github: null, overrides: {}, log: [], health: HEALTHY, aiFails: false, emptyWorkspace: false, now: Date.now() };
+      return { ...s, overrides: {}, log: [], health: HEALTHY, aiFails: false, emptyWorkspace: false, base: buildItems(), now: Date.now() };
   }
-}
-
-/** What each source shows in the sidebar for the current data source. */
-export type SourceStatus = "ok" | "error" | "off" | "loading";
-function sourceStatus(s: State): Record<Source, SourceStatus> {
-  if (s.source === "mock") return { ...s.health };
-  const gh: SourceStatus = s.loading ? "loading" : s.loadError ? "error" : "ok";
-  return { github: gh, jira: "off", slack: "off", email: "off" };
 }
 
 /** Apply the manager's changes on top of the source data. */
 function effective(s: State): WorkItem[] {
   if (s.emptyWorkspace) return [];
   return s.base
-    .filter((i) => s.source !== "mock" || s.health[i.source] === "ok")
+    .filter((i) => s.health[i.source] === "ok")
     .map((i) => {
       const o = s.overrides[i.id];
       if (!o) return i;
@@ -166,8 +125,6 @@ interface Store {
   /** Ranked open items that are not snoozed. */
   ranked: Ranked[];
   snoozed: { item: WorkItem; snooze: Snooze }[];
-  sources: Record<Source, SourceStatus>;
-  server: ServerHealth | null;
   byId: (id: string) => WorkItem | undefined;
   assign: (id: string, to: string | null) => void;
   markDone: (id: string) => void;
@@ -177,41 +134,19 @@ interface Store {
   setHealth: (source: Source, ok: boolean) => void;
   setAiFails: (on: boolean) => void;
   setEmpty: (on: boolean) => void;
-  setSource: (source: DataSource) => void;
-  refresh: () => void;
   reset: () => void;
 }
 
 const Ctx = createContext<Store | null>(null);
 
-async function fetchGithub(fresh = false): Promise<GithubPayload> {
-  const res = await fetch(`api/github/workspace${fresh ? "?fresh=1" : ""}`, { headers: { accept: "application/json" } });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data) throw new Error(data?.message ?? `The WorkRadar server returned ${res.status}.`);
-  return data as GithubPayload;
-}
-
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, init);
-  const [server, setServer] = useState<ServerHealth | null>(null);
 
   useEffect(() => save(state), [state]);
   useEffect(() => {
     const t = setInterval(() => dispatch({ type: "tick" }), 60_000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => { serverHealth().then(setServer); }, [setServer]);
-
-  // Load live GitHub data whenever that source is selected.
-  const loadGithub = useCallback((fresh = false) => {
-    dispatch({ type: "loading" });
-    fetchGithub(fresh)
-      .then((payload) => dispatch({ type: "loaded", payload }))
-      .catch((e: Error) => dispatch({ type: "loadFailed", message: e.message }));
-  }, []);
-  useEffect(() => {
-    if (state.source === "github" && !state.github) loadGithub();
-  }, [state.source, state.github, loadGithub]);
 
   const items = useMemo(() => effective(state), [state]);
 
@@ -232,8 +167,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const byId = useCallback((id: string) => items.find((i) => i.id === id), [items]);
 
   const store: Store = {
-    state, items, ranked, snoozed, byId, server,
-    sources: sourceStatus(state),
+    state, items, ranked, snoozed, byId,
     assign: (id, to) => dispatch({ type: "assign", id, to }),
     markDone: (id) => dispatch({ type: "done", id }),
     reopen: (id) => dispatch({ type: "reopen", id }),
@@ -242,8 +176,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setHealth: (source, ok) => dispatch({ type: "health", source, ok }),
     setAiFails: (on) => dispatch({ type: "aiFails", on }),
     setEmpty: (on) => dispatch({ type: "empty", on }),
-    setSource: (source) => dispatch({ type: "source", source }),
-    refresh: () => (state.source === "github" ? loadGithub(true) : dispatch({ type: "tick" })),
     reset: () => dispatch({ type: "reset" }),
   };
 
